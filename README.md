@@ -1,0 +1,1 @@
+# A Simple tool for Excel to go struct
