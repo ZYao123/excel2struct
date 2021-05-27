@@ -1,19 +1,20 @@
 package main
 
 import (
-	`fmt`
-	`io`
-	`io/ioutil`
-	`net/http`
-	`testing`
+	"fmt"
+	"io"
+	"io/ioutil"
+	"net/http"
+	"testing"
 )
 
 type S struct {
-	ID    int    `json:"id"`
-	Level int    `json:"level"`
-	Name  string `json:"name"`
-	Min   int    `json:"min"`
-	Max   int    `json:"max"`
+	ID    int      `json:"id"`
+	Level int      `json:"level"`
+	Name  string   `json:"name"`
+	Min   int      `json:"min"`
+	Max   int      `json:"max"`
+	Arr   []string `json:"arr"`
 }
 
 func TestFile2Struct(t *testing.T) {

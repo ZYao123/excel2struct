@@ -1,10 +1,11 @@
 package main
 
 import (
-	`errors`
-	`github.com/tealeg/xlsx`
-	`reflect`
-	`strconv`
+	"errors"
+	"github.com/tealeg/xlsx"
+	"reflect"
+	"strconv"
+	"strings"
 )
 
 func ParseExcelByDir(dir string, sheetName string, ptr interface{}) error {
@@ -68,6 +69,12 @@ func parseExcel(xlFile *xlsx.File, sheetName string, ptr interface{}) error {
 							node.Field(j).SetUint(atoi)
 						case reflect.String:
 							node.Field(j).SetString(text)
+						case reflect.Slice:
+							cArr, err := setArr(text, node, j)
+							if err != nil {
+								return err
+							}
+							node.Field(j).Set(reflect.Append(node.Field(j), cArr...))
 						default:
 							return errors.New("unsupported type:" + rt.Field(j).Name + " " + node.Field(j).Kind().String())
 						}
@@ -81,4 +88,30 @@ func parseExcel(xlFile *xlsx.File, sheetName string, ptr interface{}) error {
 		return nil
 	}
 	return errors.New("sheet not exist")
+}
+
+func setArr(text string, node reflect.Value, j int) ([]reflect.Value, error) {
+	split := strings.Split(text, "|")
+	cArr := make([]reflect.Value, 0)
+	for i2 := range split {
+		nd := reflect.New(node.Field(j).Type().Elem()).Elem()
+		switch nd.Kind() {
+		case reflect.Bool:
+			parseBool, _ := strconv.ParseBool(text)
+			nd.SetBool(parseBool)
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			parseInt, err := strconv.ParseInt(split[i2], 10, 64)
+			if err != nil {
+				return nil, err
+			}
+			nd.SetInt(parseInt)
+		case reflect.Uint, reflect.Uintptr, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			atoi, _ := strconv.ParseUint(text, 10, 64)
+			nd.SetUint(atoi)
+		case reflect.String:
+			nd.SetString(split[i2])
+		}
+		cArr = append(cArr, nd)
+	}
+	return cArr, nil
 }
