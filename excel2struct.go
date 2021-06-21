@@ -2,27 +2,40 @@ package main
 
 import (
 	"errors"
-	"github.com/tealeg/xlsx"
+	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
+
+	"github.com/tealeg/xlsx"
 )
+
+const skipRow = 3
+const tagName = "json"
+const splitMark = "|"
 
 func ParseExcelByDir(dir string, sheetName string, ptr interface{}) error {
 	xlFile, err := xlsx.OpenFile(dir)
 	if err != nil {
 		return err
 	}
-	return parseExcel(xlFile, sheetName, ptr)
+	return parseXlsx(xlFile, sheetName, ptr)
 }
-func ParseExcelByBytes(file []byte, sheetName string, ptr interface{}) error {
+
+func ParseExcelByBytes(file []byte, sheetName string, ptr interface{}) (err error) {
+	defer func() {
+		if err2 := recover(); err2 != nil {
+			err = fmt.Errorf("parse xlsx fail %v", err2)
+		}
+	}()
+
 	xlFile, err := xlsx.OpenBinary(file)
 	if err != nil {
 		return err
 	}
-	return parseExcel(xlFile, sheetName, ptr)
+	return parseXlsx(xlFile, sheetName, ptr)
 }
-func parseExcel(xlFile *xlsx.File, sheetName string, ptr interface{}) error {
+func parseXlsx(xlFile *xlsx.File, sheetName string, ptr interface{}) error {
 	rtPtr := reflect.TypeOf(ptr)
 	if rtPtr.Kind() != reflect.Ptr {
 		return errors.New("type error, is not ptr")
@@ -46,17 +59,19 @@ func parseExcel(xlFile *xlsx.File, sheetName string, ptr interface{}) error {
 			indexMap[row1.Cells[i].String()] = i
 		}
 		// 第三行开始数据 遍历行读取
-		for i := 2; i < len(sheet.Rows); i++ {
+		for i := skipRow; i < len(sheet.Rows); i++ {
 			row := sheet.Rows[i]
 			node := reflect.New(rt).Elem()
+			skip := true
 			for j := 0; j < rt.NumField(); j++ {
-				//	要求json tag
-				if key, hasTag := rt.Field(j).Tag.Lookup("json"); hasTag {
+				//	要求tag
+				if key, hasTag := rt.Field(j).Tag.Lookup(tagName); hasTag {
 					if cellIndex, hasKey := indexMap[key]; hasKey {
 						text := row.Cells[cellIndex].String()
-						if !node.Field(j).CanSet() {
+						if !node.Field(j).CanSet() || text == "" {
 							continue
 						}
+						skip = false
 						switch node.Field(j).Kind() {
 						case reflect.Bool:
 							parseBool, _ := strconv.ParseBool(text)
@@ -81,7 +96,9 @@ func parseExcel(xlFile *xlsx.File, sheetName string, ptr interface{}) error {
 					}
 				}
 			}
-			newArr = append(newArr, node)
+			if !skip {
+				newArr = append(newArr, node)
+			}
 		}
 		rv := reflect.ValueOf(ptr).Elem()
 		rv.Set(reflect.Append(rv, newArr...))
@@ -91,7 +108,7 @@ func parseExcel(xlFile *xlsx.File, sheetName string, ptr interface{}) error {
 }
 
 func setArr(text string, node reflect.Value, j int) ([]reflect.Value, error) {
-	split := strings.Split(text, "|")
+	split := strings.Split(text, splitMark)
 	cArr := make([]reflect.Value, 0)
 	for i2 := range split {
 		nd := reflect.New(node.Field(j).Type().Elem()).Elem()
