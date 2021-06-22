@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/tealeg/xlsx"
 )
@@ -13,6 +14,10 @@ import (
 const skipRow = 3
 const tagName = "json"
 const splitMark = "|"
+
+var (
+	timeType = reflect.TypeOf(time.Time{})
+)
 
 func ParseExcelByDir(dir string, sheetName string, ptr interface{}) error {
 	xlFile, err := xlsx.OpenFile(dir)
@@ -61,6 +66,9 @@ func parseXlsx(xlFile *xlsx.File, sheetName string, ptr interface{}) error {
 		// 第三行开始数据 遍历行读取
 		for i := skipRow; i < len(sheet.Rows); i++ {
 			row := sheet.Rows[i]
+			if len(row.Cells) == 0 {
+				continue
+			}
 			node := reflect.New(rt).Elem()
 			skip := true
 			for j := 0; j < rt.NumField(); j++ {
@@ -85,11 +93,19 @@ func parseXlsx(xlFile *xlsx.File, sheetName string, ptr interface{}) error {
 						case reflect.String:
 							node.Field(j).SetString(text)
 						case reflect.Slice:
-							cArr, err := setArr(text, node, j)
-							if err != nil {
+							if cArr, err := setArr(text, node, j); err == nil {
+								node.Field(j).Set(reflect.Append(node.Field(j), cArr...))
+							} else {
 								return err
 							}
-							node.Field(j).Set(reflect.Append(node.Field(j), cArr...))
+						case reflect.Struct:
+							if node.Field(j).Type() == timeType {
+								if t, err := parseTime(text); err == nil {
+									node.Field(j).Set(reflect.ValueOf(t))
+								} else {
+									return err
+								}
+							}
 						default:
 							return errors.New("unsupported type:" + rt.Field(j).Name + " " + node.Field(j).Kind().String())
 						}
@@ -131,4 +147,15 @@ func setArr(text string, node reflect.Value, j int) ([]reflect.Value, error) {
 		cArr = append(cArr, nd)
 	}
 	return cArr, nil
+}
+
+func parseTime(timeStr string) (time.Time, error) {
+	l := len(timeStr)
+	if l == len("2006-01-02") { //	"2006-01-02"	(00:00:00)	默认0点
+		return time.ParseInLocation("2006-01-02", timeStr, time.Local)
+	} else if l == len("2006-01-02 15:04:05") { //	"2006-01-02 15:04:05"
+		return time.ParseInLocation("2006-01-02 15:04:05", timeStr, time.Local)
+	} else {
+		return time.Time{}, fmt.Errorf("parse time err:%s", timeStr)
+	}
 }
